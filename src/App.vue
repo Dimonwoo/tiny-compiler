@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider :theme-overrides="themeOverrides" :hljs="hljs">
+  <n-config-provider :hljs="hljs">
     <n-message-provider>
       <div id="root">
         <h1 class="header">C语言语法分析器</h1>
@@ -9,11 +9,13 @@
     <!-- 模态框 -->
     <n-modal
       v-model:show="store.show"
-      :on-after-leave="() => (store.modal = null)">
+      close-on-esc
+      :on-after-leave="() => (store.modal = null)"
+      style="width: 90vw; height: 90vh; left: 5vw">
       <n-card
         :title="resultTitleMapping[store.modal]"
         aria-modal="true"
-        style="width: 90vw; height: 90vh; left: 5vw; overflow: scroll">
+        :style="getCardStyle(store.modal)">
         <LexicalTable v-if="store.modal === 'lex'"></LexicalTable>
         <ActionTable v-if="store.modal === 'action'"></ActionTable>
         <GotoTable v-if="store.modal === 'goto'"></GotoTable>
@@ -31,25 +33,25 @@ import cpp from 'highlight.js/lib/languages/cpp'
 
 // 注入代码高亮器
 hljs.registerLanguage('cpp', cpp)
-
-const store = useStore()
-
-/**
- * js 文件下使用这个做类型提示
- * @type import('naive-ui').GlobalThemeOverrides
- */
-const themeOverrides = {
-  common: {
-    primaryColor: '#3352ff',
-    primaryColorHover: '#26d4ff',
-    primaryColorPressed: '#3352ff',
-  },
-  Button: {
-    textColor: '#FF0000',
-    primaryColor: '#FF0000',
-    primaryColorHover: '#FF0000',
-  },
+// 注入log高亮器
+hljs.registerLanguage('naive-log', () => ({
+  contains: [
+    {
+      className: 'number',
+      begin: /\d+/,
+    },
+  ],
+}))
+function getCardStyle(modal) {
+  if (modal === 'slr') {
+    return {
+      overflow: 'scroll',
+    }
+  } else {
+    return {}
+  }
 }
+const store = useStore()
 </script>
 
 <style scoped>

@@ -6,9 +6,8 @@
       size="small"
       :title="item.title"
       :description="item.description"
-      :status="item.err ? 'error' : ''"
-      style="font-size: 12px"
-    />
+      :status="item.err ? 'error' : 'finish'"
+      style="font-size: 12px" />
   </n-steps>
 </template>
 

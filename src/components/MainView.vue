@@ -19,20 +19,43 @@
     <!-- 按钮区 -->
     <nav class="btnNav">
       <div v-for="item of navBtn" :key="item" class="buttonContainer">
-        <n-button
-          type="success"
-          size="medium"
-          @click="handleStartAnalyze"
-          v-if="item === 'analyze'">
-          <span class="triangle" style="margin-right: 2px"></span>
-          开始分析
-        </n-button>
+        <div v-if="item === 'analyze'">
+          <!-- 开始分析按钮 -->
+          <n-button
+            type="success"
+            size="medium"
+            @click="handleStartAnalyze"
+            v-if="!analyzeDone">
+            <span class="triangle" style="margin-right: 2px"></span>
+            开始分析
+          </n-button>
+          <!-- 分析完成 -->
+          <div v-else style="display: flex">
+            <n-button
+              type="success"
+              round
+              :bordered="false"
+              style="margin-right: 10px">
+              分析完成
+              <template #icon>
+                <n-icon :component="CheckmarkCircle" />
+              </template>
+            </n-button>
+            <n-button type="success" round @click="handleStartAnalyze">
+              重新分析
+              <template #icon>
+                <n-icon :component="Reload"></n-icon>
+              </template>
+            </n-button>
+          </div>
+        </div>
+        <!-- 查看结果按钮 -->
         <n-button
           v-else
           secondary
           type="info"
           v-show="analyzeDone"
-          @click="showModal(item)">
+          @click="handleShowModal(item)">
           {{ resultTitleMapping[item] }}
         </n-button>
       </div>
@@ -41,6 +64,7 @@
 </template>
 
 <script setup>
+import { CheckmarkCircle, Reload } from '@vicons/ionicons5'
 import { exampleSourceCode } from '@/utils/constants'
 import { resultTitleMapping } from '@/utils/mappings'
 import { lexicalAnalyze, syntaxAnalyze } from '@/utils/tools'
@@ -85,7 +109,8 @@ const handleStartAnalyze = function () {
   analyzeDone.value = true
 }
 
-const showModal = function (modalName) {
+// 显示结果模态框
+const handleShowModal = function (modalName) {
   store.show = true
   store.modal = modalName
 }
