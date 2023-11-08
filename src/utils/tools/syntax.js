@@ -2,12 +2,232 @@ import { G } from '@/utils/constants'
 import { Product, Item } from '@/utils/types'
 
 // 语法分析主函数
+// 过程：先获取分析表（action和goto），然后SLR1分析之后给出日志即可
 export function syntaxAnalyze(tokenList) {
   const [ACTION, GOTO] = getSLR1Table(G)
   const log = SLR1Analysis(G, ACTION, GOTO, tokenList)
   return { ACTION, GOTO, log }
 }
 
+/**
+ * 获取分析表：输入文法为非拓广文法，转换为G的拓广文法G'，输出SLR(1)分析表
+ * 过程：
+ * 1. 获取非拓广文法G的FOLLOW集，归约时要用，这是不同于LR(0)分析的地方
+ * 2. 由非拓广文法G求解拓广文法G'，只需在产生式P最前边添加S'->S, 在非终结符V的最前边添加S'
+ *    目的：保证文法的开始符号的定义只有一个产生式，并且文法的开始符号不会出现在其他产生式的右部
+ *          也保证了G'只有唯一的接受状态。
+ * 3. 求解拓广文法G'的LR0项目集规范族
+ * 4. 初始化Action表和Goto表
+ * 5. 构造Action表和Goto表
+ *     5.1. 若项目A->α.aβ属于I_k，且GO(I_k,a)=I_j，a为终结符，则置ACTION[k,a]为sj
+ *     5.2. 若项目A->α.属于I_k，那么对任何终结符a∈FOLLOW(A),置ACTION[k,a]为rj，假定A->α为G'的第*          j个产生式
+ *     5.3. 若项目S'->S.属于I_k，则置ACTION[k,#]为“acc”
+ *     5.4. 若GO(I_k,A)=I_j，A为非终结符，则置GOTO[k,A]=j
+ *     5.5. 若不为以上情况，则ACTION与GOTO表剩余单元格置为空，代表出现错误
+ */
+function getSLR1Table(G) {
+  // 1. 获取非拓广文法G的FOLLOW集
+  let FOLLOW = getFollow(G)
+
+  // 2. 拓广过程（G->G'）
+  G['P'].unshift(new Product(G['S'] + "'", [G['S']]))
+  G['V'].unshift(G['S'] + "'")
+
+  // 3. 求解拓广文法G'的LR0项目集规范族
+  let C = getLR0Collection(G)
+  let n = C.length
+
+  // 4.1 ACTION表的初始化
+  let row = {}
+  G['T'].forEach((t) => {
+    row[t] = ''
+  })
+  row['#'] = ''
+  let ACTION = []
+  for (let i = 0; i < n; i++) {
+    var r = Object.assign({}, row)
+    ACTION.push(r)
+  }
+
+  // 4.2 GOTO表的初始化
+  let temp_V = new Set(G['V'])
+  temp_V.delete(G['S'] + "'") // 去掉S'->S
+  row = {}
+  temp_V.forEach((v) => {
+    row[v] = ''
+  })
+  let GOTO = []
+  for (let i = 0; i < n; i++) {
+    var r = Object.assign({}, row)
+    GOTO.push(r)
+  }
+
+  // 5. 构造Action表和Goto表
+  for (let k = 0; k < n; k++) {
+    let I = C[k]
+    for (let i = 0; i < I.length; i++) {
+      let item = I[i]
+      // 如果圆点不在LR(0)项目的最右侧，则需要移进
+      if (item.index < item.right.length) {
+        // 获取项目圆点的下一个字符
+        let ch = item.right[item.index]
+        // 找出项目集I在读入下一个字符ch要跳转到的项目集
+        // 即找到使得GO(G, I, ch) = C[j]成立的j
+        for (let j = 0; j < n; j++) {
+          if (judgeSetEqual(GO(G, I, ch), C[j])) {
+            // 如果ch是终结符，则在ACTION表中进行记录状态转移
+            if (G['T'].indexOf(ch) >= 0) ACTION[k][ch] = 's' + j
+            // 如果是非终结符，则在GOTO表中进行记录状态转移
+            else GOTO[k][ch] = j
+
+            break
+          }
+        }
+      }
+      // 如果圆点在LR(0)项目的最右侧，则需要归约
+      else {
+        // 如果当前项目是S'->S.，则在ACTION表里添加acc，代表接受状态
+        if (item.left == G['S'] + "'") {
+          ACTION[k]['#'] = 'acc'
+          continue
+        }
+        // 其他归约情况，找到P中对应的产生式序号
+        let m = G['P'].length
+        for (let j = 1; j < m; j++) {
+          if (G['P'][j].left == item.left && G['P'][j].right == item.right) {
+            let FOLLOW_A = FOLLOW[item.left]
+            // 面临的符号属于FOLLOW集或者为‘#’，都进行归约
+            G['T'].forEach((t) => {
+              if (FOLLOW_A.indexOf(t) >= 0) ACTION[k][t] = 'r' + j
+            })
+            if (FOLLOW_A.indexOf('#') >= 0) {
+              ACTION[k]['#'] = 'r' + j
+            }
+            break
+          }
+        }
+      }
+    }
+  }
+  console.log('ACTION:\n', ACTION)
+  console.log('GOTO:\n', GOTO)
+  return [ACTION, GOTO]
+}
+
+/**
+ * SLR1分析：输入文法G、SLR(1)的ACTION与GOTO分析表、词法分析得到的token串，输出LR分析结果（日志）
+ * 过程：
+ * 1. 初始化状态栈，符号栈，输入缓冲区，用于记录输入缓冲区当前下标的变量
+ * 2. 进行归约
+ */
+//
+function SLR1Analysis(G, ACTION, GOTO, token) {
+  // 1.初始化状态栈，符号栈，输入缓冲区
+  let stack_state = [0],
+    stack_character = ['#'],
+    buffer = []
+  token.forEach((t) => {
+    if (t.code === 1) buffer.push('id')
+    else if (t.code === 2 || t.code === 3 || t.code === 5) buffer.push('value')
+    else buffer.push(t.value)
+  })
+  buffer.push('#')
+
+  const log = []
+  // 用于记录输入缓冲区当前下标的变量
+  let ip = 0,
+    step = 0
+  while (true) {
+    const stateStackStr = `状态栈：${stack_state.join(' ')}`
+    const stackCharacterStr = `符号栈：${stack_character.join(' ')}`
+    const write = {
+      title: ``,
+      description: ``,
+    }
+    step += 1
+    if (ip >= buffer.length) break
+
+    // 获得栈顶状态S以及ip指向的符号a
+    const S = stack_state[stack_state.length - 1],
+      a = buffer[ip]
+    const action = ACTION[S][a]
+    const inputBufferStr = '输入缓冲区：' + buffer.slice(ip).join(' ')
+    const analyzeTableStr = '分析表内容：' + ACTION[S][a]
+    let currentAction = '当前动作：'
+    if (action === '') {
+      currentAction += '出错'
+      write.title = currentAction
+      write.description =
+        stateStackStr +
+        ' ...... ' +
+        stackCharacterStr +
+        ' ...... ' +
+        inputBufferStr +
+        ' ...... ' +
+        analyzeTableStr
+      write.err = true
+      log.push(write)
+      break
+    } else if (action[0] == 's') {
+      let i = parseInt(action.slice(1))
+      currentAction +=
+        '移进：将状态' + i + '压入状态栈，将符号' + a + '压入符号栈'
+      stack_character.push(a)
+      stack_state.push(i)
+      ip++
+    } else if (action[0] == 'r') {
+      let k = parseInt(action.slice(1)),
+        n = G['P'][k].right.length
+      currentAction +=
+        '归约：按照第' +
+        k +
+        '个产生式' +
+        G['P'][k].right.join(' ') +
+        ' => ' +
+        G['P'][k].left +
+        '进行归约'
+      let A = G['P'][k].left
+
+      // 归约以后弹出n个符号
+      stack_state = stack_state.slice(0, stack_state.length - n)
+      stack_character = stack_character.slice(0, stack_character.length - n)
+
+      // 查询GOTO表，将新的状态压入状态栈
+      let S = stack_state[stack_state.length - 1]
+      stack_state.push(parseInt(GOTO[S][A]))
+      currentAction +=
+        '，查询GOTO[' + S + ',' + A + ']，将状态' + GOTO[S][A] + '压入状态栈'
+      stack_character.push(A)
+    } else if (action == 'acc') {
+      currentAction += '接受'
+      write.title = currentAction
+      write.description =
+        stateStackStr +
+        ' ...... ' +
+        stackCharacterStr +
+        ' ...... ' +
+        inputBufferStr +
+        ' ...... ' +
+        analyzeTableStr
+      log.push(write)
+      log.push({ title: '分析成功', description: '' })
+      break
+    }
+    write.title = currentAction
+    write.description =
+      stateStackStr +
+      ' ...... ' +
+      stackCharacterStr +
+      ' ...... ' +
+      inputBufferStr +
+      ' ...... ' +
+      analyzeTableStr
+
+    log.push(write)
+  }
+  console.log('SLR日志\n', log)
+  return log
+}
 // 求两个FIRST集的并集，并返回该并集是否比原本的左侧集合更大，参数discard代表是否需要去除ε
 function unionFIRST(FIRST, X, Y, discard) {
   let set_X = new Set(FIRST[X]),
@@ -98,19 +318,19 @@ function hasItem(item, set) {
 }
 
 // 判断两个LR(0)项目集是否相等
-function setEqual(A, B) {
+function judgeSetEqual(A, B) {
   //集合长度不等，则一定不相等
   if (A.length != B.length) return false
-  return A.every((v, i, a) => itemEqual(A[i], B[i]))
+  return A.every((v, i, a) => judgeItemEqual(A[i], B[i]))
 }
 
 // 判断两个LR(0)项目是否相等
-function itemEqual(a, b) {
+function judgeItemEqual(a, b) {
   return a.left == b.left && a.right == b.right && a.index == b.index
 }
 
 // 在拓广文法G'中求解项目I的闭包J
-function CLOSURE(G, I) {
+function getClosure(G, I) {
   // 列表深拷贝，二者不会相互影响
   let [...J] = I //J数组，用于存储闭包
   let [...E] = I //E数组，模拟队列，用于记录还没有遍历到的项目
@@ -161,9 +381,10 @@ function GO(G, I, X) {
         J.push(new Item(item.left, item.right, item.index + 1))
   }
   // 返回J的闭包作为项目集
-  return CLOSURE(G, J)
+  return getClosure(G, J)
 }
 
+// 得到文法G的First集
 function getFirst(G) {
   // 初始化一个字典，用以存放终结符和非终结符的FIRST集
   const FIRST = {}
@@ -232,6 +453,7 @@ function getFirst(G) {
   return FIRST
 }
 
+// 得到文法G的Follow集
 function getFollow(G) {
   const FIRST = getFirst(G),
     FOLLOW = {}
@@ -294,7 +516,7 @@ function getFollow(G) {
 // 输入拓广文法G'，计算其LR(0)项目集规范族C
 function getLR0Collection(G) {
   let I = [new Item(G['P'][0].left, G['P'][0].right, 0)] // 项目集
-  let C = [CLOSURE(G, I)] // 项目集规范族
+  let C = [getClosure(G, I)] // 项目集规范族
   let V_and_T = G['V'].concat(G['T']) // 终结符集和非终结符集
 
   let [...E] = C //E数组，相当于队列，用于记录还没有遍历到的项目
@@ -312,7 +534,7 @@ function getLR0Collection(G) {
         // 判断项目集J是否已经在项目集规范族C中
         let flag = false
         C.forEach((K) => {
-          if (setEqual(J, K)) flag = true
+          if (judgeSetEqual(J, K)) flag = true
         })
         // 如果项目集J不在项目集规范族C中，则将其添加到C中
         if (!flag) {
@@ -326,216 +548,4 @@ function getLR0Collection(G) {
     E.shift()
   }
   return C
-}
-
-// 输入文法G的拓广文法G'，获取SLR(1)分析表
-// 输入文法为非拓广文法
-function getSLR1Table(G) {
-  // 获取非拓广文法G的FOLLOW集，归约时要用，这是不同于LR(0)分析的地方
-  let FOLLOW = getFollow(G)
-
-  // 由非拓广文法G求解拓广文法G'，只需在产生式P最前边添加
-  // S' -> S, 在非终结符V的最前边添加S'
-  // 拓广文法的目的是保证文法的开始符号的定义只有一个产生式
-  // 并且文法的开始符号不会出现在其他产生式的右部
-  // 也保证了G'只有唯一的接受状态
-  G['P'].unshift(new Product(G['S'] + "'", [G['S']]))
-  G['V'].unshift(G['S'] + "'")
-
-  // 求解拓广文法G'的LR0项目集规范族
-  let C = getLR0Collection(G),
-    n = C.length
-
-  // ACTION表的初始化
-  let row = {}
-  G['T'].forEach((t) => {
-    row[t] = ''
-  })
-  row['#'] = ''
-  let ACTION = []
-  for (let i = 0; i < n; i++) {
-    var r = Object.assign({}, row)
-    ACTION.push(r)
-  }
-
-  // GOTO表的初始化
-  let temp_V = new Set(G['V'])
-  temp_V.delete(G['S'] + "'") // 去掉S'->S
-  row = {}
-  temp_V.forEach((v) => {
-    row[v] = ''
-  })
-  let GOTO = []
-  for (let i = 0; i < n; i++) {
-    var r = Object.assign({}, row)
-    GOTO.push(r)
-  }
-
-  /* ACTION表和GOTO表的构造：
-  1. 若项目A->α.aβ属于I_k，且GO(I_k,a)=I_j，a为终结符，则置ACTION[k,a]为sj
-  2. 若项目A->α.属于I_k，那么对任何终结符a∈FOLLOW(A),置ACTION[k,a]为rj，假定A->α为G'的第j个产生式
-  3. 若项目S'->S.属于I_k，则置ACTION[k,#]为“acc”
-  4. 若GO(I_k,A)=I_j，A为非终结符，则置GOTO[k,A]=j
-  5. 若不为以上情况，则ACTION与GOTO表剩余单元格置为空，代表出现错误
-  */
-
-  for (let k = 0; k < n; k++) {
-    let I = C[k]
-    for (let i = 0; i < I.length; i++) {
-      let item = I[i]
-      // 如果圆点不在LR(0)项目的最右侧，则需要移进
-      if (item.index < item.right.length) {
-        // 获取项目圆点的下一个字符
-        let ch = item.right[item.index]
-        // 找出项目集I在读入下一个字符ch要跳转到的项目集
-        // 即找到使得GO(G, I, ch) = C[j]成立的j
-        for (let j = 0; j < n; j++) {
-          if (setEqual(GO(G, I, ch), C[j])) {
-            // 如果ch是终结符，则在ACTION表中进行记录状态转移
-            if (G['T'].indexOf(ch) >= 0) ACTION[k][ch] = 's' + j
-            // 如果是非终结符，则在GOTO表中进行记录状态转移
-            else GOTO[k][ch] = j
-
-            break
-          }
-        }
-      }
-
-      // 如果圆点在LR(0)项目的最右侧，则需要归约
-      else {
-        // 如果当前项目是S'->S.，则在ACTION表里添加acc，代表接受状态
-        if (item.left == G['S'] + "'") {
-          ACTION[k]['#'] = 'acc'
-          continue
-        }
-        // 其他归约情况，找到P中对应的产生式序号
-        let m = G['P'].length
-        for (let j = 1; j < m; j++) {
-          if (G['P'][j].left == item.left && G['P'][j].right == item.right) {
-            let FOLLOW_A = FOLLOW[item.left]
-            // 面临的符号属于FOLLOW集或者为‘#’，都进行归约
-            G['T'].forEach((t) => {
-              if (FOLLOW_A.indexOf(t) >= 0) ACTION[k][t] = 'r' + j
-            })
-            if (FOLLOW_A.indexOf('#') >= 0) {
-              ACTION[k]['#'] = 'r' + j
-            }
-            break
-          }
-        }
-      }
-    }
-  }
-  console.log('ACTION:\n', ACTION)
-  console.log('GOTO:\n', GOTO)
-  return [ACTION, GOTO]
-}
-
-// 输入文法G、SLR(1)的ACTION与GOTO分析表、词法分析得到的token串，输出LR分析结果
-function SLR1Analysis(G, ACTION, GOTO, token) {
-  // 状态栈，符号栈，输入缓冲区
-  let stack_state = [0],
-    stack_character = ['#'],
-    buffer = []
-  token.forEach((t) => {
-    if (t.code === 1) buffer.push('id')
-    else if (t.code === 2 || t.code === 3 || t.code === 5) buffer.push('value')
-    else buffer.push(t.value)
-  })
-  buffer.push('#')
-
-  const log = []
-  // 用于记录输入缓冲区当前下标的变量
-  let ip = 0,
-    step = 0
-  while (true) {
-    const stateStackStr = `状态栈：${stack_state.join(' ')}`
-    const stackCharacterStr = `符号栈：${stack_character.join(' ')}`
-    const write = {
-      title: ``,
-      description: ``,
-    }
-    step += 1
-    if (ip >= buffer.length) break
-
-    // 获得栈顶状态S以及ip指向的符号a
-    const S = stack_state[stack_state.length - 1],
-      a = buffer[ip]
-    const action = ACTION[S][a]
-    const inputBufferStr = '输入缓冲区：' + buffer.slice(ip).join(' ')
-    const analyseTableStr = '分析表内容：' + ACTION[S][a]
-    let currentAction = '当前动作：'
-    if (action === '') {
-      currentAction += '出错'
-      write.title = currentAction
-      write.description =
-        stateStackStr +
-        ' ...... ' +
-        stackCharacterStr +
-        ' ...... ' +
-        inputBufferStr +
-        ' ...... ' +
-        analyseTableStr
-      write.err = true
-      log.push(write)
-      break
-    } else if (action[0] == 's') {
-      let i = parseInt(action.slice(1))
-      currentAction +=
-        '移进：将状态' + i + '压入状态栈，将符号' + a + '压入符号栈'
-      stack_character.push(a)
-      stack_state.push(i)
-      ip++
-    } else if (action[0] == 'r') {
-      let k = parseInt(action.slice(1)),
-        n = G['P'][k].right.length
-      currentAction +=
-        '归约：按照第' +
-        k +
-        '个产生式' +
-        G['P'][k].right.join(' ') +
-        ' => ' +
-        G['P'][k].left +
-        '进行归约'
-      let A = G['P'][k].left
-
-      // 归约以后弹出n个符号
-      stack_state = stack_state.slice(0, stack_state.length - n)
-      stack_character = stack_character.slice(0, stack_character.length - n)
-
-      // 查询GOTO表，将新的状态压入状态栈
-      let S = stack_state[stack_state.length - 1]
-      stack_state.push(parseInt(GOTO[S][A]))
-      currentAction +=
-        '，查询GOTO[' + S + ',' + A + ']，将状态' + GOTO[S][A] + '压入状态栈'
-      stack_character.push(A)
-    } else if (action == 'acc') {
-      currentAction += '接受'
-      write.title = currentAction
-      write.description =
-        stateStackStr +
-        ' ...... ' +
-        stackCharacterStr +
-        ' ...... ' +
-        inputBufferStr +
-        ' ...... ' +
-        analyseTableStr
-      log.push(write)
-      log.push({ title: '分析成功', description: '' })
-      break
-    }
-    write.title = currentAction
-    write.description =
-      stateStackStr +
-      ' ...... ' +
-      stackCharacterStr +
-      ' ...... ' +
-      inputBufferStr +
-      ' ...... ' +
-      analyseTableStr
-
-    log.push(write)
-  }
-  console.log('SLR日志\n', log)
-  return log
 }

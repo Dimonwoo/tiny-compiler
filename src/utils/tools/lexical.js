@@ -67,50 +67,49 @@ function preprocess(sourceCode) {
 }
 
 // 2,tokenizer->词法分析过程
+// 过程：根据优先级，对不同的值进行鉴别，鉴别的过程用到匹配、正则以及单纯的直观的算法
 function tokenizer(lineList) {
   Token.prototype.index = 1
 
   const res = []
 
   for (const row of lineList) {
-    const line = row // 删除句子前后空白字符
-
-    for (let i = 0; i < line.length; i++) {
+    for (let i = 0; i < row.length; i++) {
       let tempArray = []
       let tempString = ''
-      if (line[i] === ' ' || !line[i]) continue
+      if (row[i] === ' ' || !row[i]) continue
       // 第一优先级：分界符和运算符
       // 7 - 分界符：分界符均为单字符
-      if (delimiters.has(line[i])) {
-        res.push(new Token(7, line[i]))
+      if (delimiters.has(row[i])) {
+        res.push(new Token(7, row[i]))
         continue
       }
       // 8 - 运算符：分为单字符运算符和双字符运算符
       // 因为双字符运算符的第一个字符一定也是一个运算符，所以不用分开讨论
-      if (operators.has(line[i])) {
-        tempString = line[i++]
+      if (operators.has(row[i])) {
+        tempString = row[i++]
         // 双字符超前搜索
-        if (operators.has(tempString + line[i])) tempString += line[i]
+        if (operators.has(tempString + row[i])) tempString += row[i]
         res.push(new Token(8, tempString))
         continue
       }
 
       // 第二优先级：浮点数、整数、字符串
       // 3 - 浮点数，2 - 整数
-      if (SINGLEDIGIT.test(line[i])) {
+      if (SINGLEDIGIT.test(row[i])) {
         tempArray = [] // 用以接收未知长度的数字
-        while (SINGLEDIGIT.test(line[i]) || line[i] == '.') {
-          tempArray.push(line[i++])
-          if (i > line.length - 1) break
+        while (SINGLEDIGIT.test(row[i]) || row[i] == '.') {
+          tempArray.push(row[i++])
+          if (i > row.length - 1) break
         }
 
         // 防止出现数字开头的非法标识符
         if (
-          line[i] == ' ' ||
-          i === line.length ||
-          SINGLEDIGIT.test(line[i]) ||
-          operators.has(line[i]) ||
-          delimiters.has(line[i])
+          row[i] == ' ' ||
+          i === row.length ||
+          SINGLEDIGIT.test(row[i]) ||
+          operators.has(row[i]) ||
+          delimiters.has(row[i])
         ) {
           if (tempArray.indexOf('.') >= 0) {
             const index = tempArray.indexOf('.')
@@ -122,13 +121,13 @@ function tokenizer(lineList) {
           // 恐慌模式匹配错误
           while (true) {
             if (
-              i > line.length - 1 ||
-              line[i] == ' ' ||
-              operators.has(line[i]) ||
-              delimiters.has(line[i])
+              i > row.length - 1 ||
+              row[i] == ' ' ||
+              operators.has(row[i]) ||
+              delimiters.has(row[i])
             )
               break
-            else tempArray.push(line[i++])
+            else tempArray.push(row[i++])
           }
           res.push(new Token(-1, tempArray.join(''), '非法标识符'))
         }
@@ -137,16 +136,16 @@ function tokenizer(lineList) {
       }
 
       // 5 - 字符串
-      if (line[i] == '"' || line[i] == "'") {
-        const mark = line[i++]
+      if (row[i] == '"' || row[i] == "'") {
+        const mark = row[i++]
         tempArray = []
-        while (line[i] != mark) {
-          tempArray.push(line[i++])
-          if (i >= line.length - 1) break
+        while (row[i] != mark) {
+          tempArray.push(row[i++])
+          if (i >= row.length - 1) break
         }
         tempArray = tempArray.join('')
         // 引号闭合与未闭合的情况
-        if (line[i] === mark) res.push(new Token(5, tempArray))
+        if (row[i] === mark) res.push(new Token(5, tempArray))
         else res.push(new Token(-1, tempArray, '引号未闭合'))
         continue
       }
@@ -157,13 +156,13 @@ function tokenizer(lineList) {
       tempString = ''
       while (true) {
         if (
-          i > line.length - 1 ||
-          line[i] == ' ' ||
-          operators.has(line[i]) ||
-          delimiters.has(line[i])
+          i > row.length - 1 ||
+          row[i] == ' ' ||
+          operators.has(row[i]) ||
+          delimiters.has(row[i])
         )
           break
-        else tempArray.push(line[i++])
+        else tempArray.push(row[i++])
       }
       tempString = tempArray.join('')
       if (keywords.has(tempString)) res.push(new Token(6, tempString))
