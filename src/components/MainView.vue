@@ -1,32 +1,32 @@
 <template>
   <div>
+    <!-- 输入区 -->
     <n-input
-      v-model:value="source"
+      v-model:value="sourceCode"
       type="textarea"
-      placeholder="在这里输入C语言源码"
+      placeholder="请在这里输入C语言源码"
       :autosize="{
         minRows: 20,
         maxRows: 20,
-      }"
-    />
+      }" />
+    <!-- 按钮区 -->
     <nav class="funcNav">
-      <div v-for="item of navFunc" :key="item" class="button-container">
-        <n-popover v-if="item === 'analyse'" trigger="hover">
+      <div v-for="item of navFunc" :key="item" class="buttonContainer">
+        <n-popover v-if="item === 'analyze'" trigger="hover">
           <template #trigger>
-            <n-button type="success" @click="startAnalyse">
+            <n-button type="success" @click="handleStartAnalyze">
               <div id="tri"></div>
             </n-button>
           </template>
-          <span>开始分析</span>
         </n-popover>
         <n-button
           v-else
           secondary
           type="info"
-          :disabled="analyseDone"
-          @click="showModal(item)"
-          >{{ resultTilteMapping[item] }}</n-button
-        >
+          :disabled="analyzeDone"
+          @click="showModal(item)">
+          {{ resultTitleMapping[item] }}
+        </n-button>
       </div>
     </nav>
   </div>
@@ -34,44 +34,45 @@
 
 <script setup>
 import { exampleSourceCode } from '@/utils/constants'
-import { resultTilteMapping } from '@/utils/mappings'
-import { lexicalAnalyse, syntaxAnalyse } from '@/utils/tools'
+import { resultTitleMapping } from '@/utils/mappings'
+import { lexicalAnalyze, syntaxAnalyze } from '@/utils/tools'
 import { ref } from 'vue'
 import { useMessage } from 'naive-ui'
 import { useStore } from '@/store'
 
-const source = ref(exampleSourceCode)
-const analyseDone = ref(true)
+const sourceCode = ref(exampleSourceCode)
+const analyzeDone = ref(true)
 const message = useMessage()
 const store = useStore()
-const navFunc = ['lex', 'action', 'analyse', 'goto', 'slr']
+const navFunc = ['lex', 'action', 'analyze', 'goto', 'slr']
 
-const startAnalyse = function () {
+// 开始分析
+const handleStartAnalyze = function () {
   store.token = null
   store.action = null
   store.goto = null
   store.log = null
 
-  store.token = lexicalAnalyse(source.value)
+  store.token = lexicalAnalyze(sourceCode.value)
   if (store.token.some((v) => v.code === -1)) {
     message.error('词法分析出现错误，请检查')
-    analyseDone.value = false
+    analyzeDone.value = false
     return
   }
-  const { ACTION, GOTO, log } = syntaxAnalyse(store.token)
+  const { ACTION, GOTO, log } = syntaxAnalyze(store.token)
   if (log.some((v) => v.err)) {
     message.error('语法分析出现错误，请检查')
     store.action = ACTION
     store.goto = GOTO
     store.log = log
-    analyseDone.value = false
+    analyzeDone.value = false
     return
   }
   store.action = ACTION
   store.goto = GOTO
   store.log = log
   message.success('分析成功')
-  analyseDone.value = false
+  analyzeDone.value = false
 }
 
 const showModal = function (modalName) {
@@ -88,7 +89,7 @@ const showModal = function (modalName) {
   grid-template-columns: repeat(5, 1fr);
 }
 
-.button-container {
+.buttonContainer {
   display: flex;
   justify-content: center;
   align-items: center;

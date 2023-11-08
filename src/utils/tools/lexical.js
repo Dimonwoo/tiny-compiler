@@ -1,20 +1,22 @@
 import { Token } from '@/utils/types'
 import { keywords, operators, delimiters } from '@/utils/constants'
-// 总过程
-export function lexicalAnalyse (str) {
+// 词法分析
+export function lexicalAnalyze(str) {
   console.log('源代码：\n', str)
   const lineList = preprocess(str)
   const token = process(lineList)
   return token
 }
 
-function isDigit (ch) {
-  return ch.charCodeAt() - 48 >= 0 && ch.charCodeAt() - 48 <= 9;
+function isDigit(ch) {
+  return ch.charCodeAt() - 48 >= 0 && ch.charCodeAt() - 48 <= 9
 }
 
 // 源代码串的预处理过程，删除空白字符及注释
-function preprocess (str) {
-  const res = [], space = /^\s+$/, lineList = str.split('\n')
+function preprocess(str) {
+  const res = [],
+    space = /^\s+$/,
+    lineList = str.split('\n')
   let inMLComment = false
   for (let line of lineList) {
     let index = -1
@@ -41,17 +43,25 @@ function preprocess (str) {
       continue
     }
     // 最终将行处理一下插入到结果数组中
-    res.push(line.split(/\s+/).map(v => v + ' ').join(''))
+    res.push(
+      line
+        .split(/\s+/)
+        .map((v) => v + ' ')
+        .join('')
+    )
   }
-  console.log('预处理后的源代码：\n', res.filter(v => !space.test(v)))
-  return res.filter(v => !space.test(v))
+  console.log(
+    '预处理后的源代码：\n',
+    res.filter((v) => !space.test(v))
+  )
+  return res.filter((v) => !space.test(v))
 }
 
-function process (lineList) {
+function process(lineList) {
   Token.prototype.index = 1
   const res = []
   for (const row of lineList) {
-    const line = row.replace(/(^\s*)|(\s*$)/g, "")  // 删除句子前后空白字符
+    const line = row.replace(/(^\s*)|(\s*$)/g, '') // 删除句子前后空白字符
     for (let i = 0; i < line.length; i++) {
       let temp = ''
       if (line[i] === ' ' || !line[i]) continue
@@ -73,26 +83,39 @@ function process (lineList) {
 
       // 3 - 浮点数，2 - 整数。优先级：2
       if (isDigit(line[i])) {
-        temp = []  // 用以接收未知长度的数字
+        temp = [] // 用以接收未知长度的数字
         while (isDigit(line[i]) || line[i] == '.') {
           temp.push(line[i++])
           if (i > line.length - 1) break
         }
 
         // 防止出现数字开头的非法标识符
-        if (line[i] == ' ' || i === line.length || isDigit(line[i]) || operators.has(line[i]) || delimiters.has(line[i])) {
+        if (
+          line[i] == ' ' ||
+          i === line.length ||
+          isDigit(line[i]) ||
+          operators.has(line[i]) ||
+          delimiters.has(line[i])
+        ) {
           if (temp.indexOf('.') >= 0) {
-            const index = temp.indexOf('.');
-            if (temp.slice(index + 1).indexOf('.') > 0) res.push(new Token(-1, temp.join(''), "非法浮点数"))
+            const index = temp.indexOf('.')
+            if (temp.slice(index + 1).indexOf('.') > 0)
+              res.push(new Token(-1, temp.join(''), '非法浮点数'))
             else res.push(new Token(3, temp.join('')))
           } else res.push(new Token(2, temp.join('')))
         } else {
           // 恐慌模式匹配错误
           while (true) {
-            if (i > line.length - 1 || line[i] == ' ' || operators.has(line[i]) || delimiters.has(line[i])) break
+            if (
+              i > line.length - 1 ||
+              line[i] == ' ' ||
+              operators.has(line[i]) ||
+              delimiters.has(line[i])
+            )
+              break
             else temp.push(line[i++])
           }
-          res.push(new Token(-1, temp.join(''), "非法标识符"))
+          res.push(new Token(-1, temp.join(''), '非法标识符'))
         }
         i--
         continue
@@ -109,25 +132,32 @@ function process (lineList) {
         temp = temp.join('')
         // 引号闭合与未闭合的情况
         if (line[i] === mark) res.push(new Token(5, temp))
-        else res.push(new Token(-1, temp, "引号未闭合"))
+        else res.push(new Token(-1, temp, '引号未闭合'))
         continue
       }
 
       // 6 - 关键词，1 - 标识符。优先级：3
       temp = []
       while (true) {
-        if (i > line.length - 1 || line[i] == ' ' || operators.has(line[i]) || delimiters.has(line[i])) break
+        if (
+          i > line.length - 1 ||
+          line[i] == ' ' ||
+          operators.has(line[i]) ||
+          delimiters.has(line[i])
+        )
+          break
         else temp.push(line[i++])
       }
       temp = temp.join('')
       if (keywords.has(temp)) res.push(new Token(6, temp))
       else {
-        if (!(temp[0].match(/[a-zA-Z]/) || temp[0] == "_")) res.push(new Token(-1, temp, "非法标识符"))
+        if (!(temp[0].match(/[a-zA-Z]/) || temp[0] == '_'))
+          res.push(new Token(-1, temp, '非法标识符'))
         else res.push(new Token(1, temp))
       }
       i--
     }
   }
-  console.log('划分词类后的源代码：\n', res);
+  console.log('划分词类后的源代码：\n', res)
   return res
 }

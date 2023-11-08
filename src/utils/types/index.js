@@ -1,4 +1,13 @@
-const typeCodeMapping = new Map([[-1, '错误'], [1, '标识符'], [2, '整数'], [3, '浮点数'], [5, '字符串'], [6, '关键字'], [7, '分界符'], [8, '运算符']])
+const typeCodeMapping = new Map([
+  [-1, '错误'],
+  [1, '标识符'],
+  [2, '整数'],
+  [3, '浮点数'],
+  [5, '字符串'],
+  [6, '关键字'],
+  [7, '分界符'],
+  [8, '运算符'],
+])
 export class Token {
   constructor(code, value, err) {
     this.type = typeCodeMapping.get(code) + ' ' + (err ?? '')
@@ -9,19 +18,19 @@ export class Token {
 }
 Token.prototype.index = 1
 
-// 产生式，两个属性代表左部和右部
+// 产生式
 export class Product {
   constructor(left, right) {
-    this.left = left;
-    this.right = right;
+    this.left = left //左部
+    this.right = right //右部
   }
 }
 
-// LR(0)项目，三个属性分别表示产生式左部、右部和圆点坐标（在对应坐标字符的左侧）
+// LR(0)项目
 export class Item {
   constructor(left, right, index) {
-    this.left = left;
-    this.right = right;
-    this.index = index;
+    this.left = left //产生式左部
+    this.right = right //产生式右部
+    this.index = index //圆点坐标
   }
 }
