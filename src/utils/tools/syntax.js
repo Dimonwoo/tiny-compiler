@@ -1,5 +1,7 @@
 import { G } from '@/utils/constants'
 import { Product, Item } from '@/utils/types'
+
+// 语法分析主函数
 export function syntaxAnalyze(tokenList) {
   const [ACTION, GOTO] = getSLR1Table(G)
   const log = SLR1Analysis(G, ACTION, GOTO, tokenList)

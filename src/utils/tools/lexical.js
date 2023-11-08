@@ -5,6 +5,7 @@ const SINGLEDIGIT = /^[0-9]$/ //个位数，0-9
 const SPACE = /^\s+$/ //空格
 const SPACEINSTARTANDEND = /(^\s*)|(\s*$)/g
 const LETTER = /[a-zA-Z]/
+
 // 词法分析主函数
 export function lexicalAnalyze(sourceCode) {
   console.log('源代码：\n', sourceCode)
@@ -15,7 +16,7 @@ export function lexicalAnalyze(sourceCode) {
 
 // 1，预处理：删除空白字符及注释
 function preprocess(sourceCode) {
-  const res = []
+  let res = []
   const lineList = sourceCode.split('\n')
   let inMLComment = false //在多行注释内部
 
@@ -46,7 +47,7 @@ function preprocess(sourceCode) {
       inMLComment = true
       continue
     }
-    // 最终将行处理一下插入到结果数组中
+
     res.push(
       line
         .split(/\s+/)
@@ -54,7 +55,13 @@ function preprocess(sourceCode) {
         .join('')
     )
   }
-  const preprocessedCode = res.filter((v) => !SPACE.test(v))
+  let preprocessedCode = res
+    .filter((v) => !SPACE.test(v) && v !== '') //去除全是空格的句子和空的句子
+    .map((v) => {
+      //去除句子前后的空格
+      v = v.replace(SPACEINSTARTANDEND, '')
+      return v
+    })
   console.log('预处理后的源代码：\n', preprocessedCode)
   return preprocessedCode
 }
@@ -66,7 +73,7 @@ function tokenizer(lineList) {
   const res = []
 
   for (const row of lineList) {
-    const line = row.replace(SPACEINSTARTANDEND, '') // 删除句子前后空白字符
+    const line = row // 删除句子前后空白字符
 
     for (let i = 0; i < line.length; i++) {
       let tempArray = []
